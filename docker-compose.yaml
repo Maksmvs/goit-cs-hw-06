@@ -14,13 +14,6 @@ services:
     depends_on:
       - mongodb
 
-  socket:
-    build: .
-    command: python socket_server.py
-    volumes:
-      - ./socket_server.py:/app/socket_server.py
-    depends_on:
-      - mongodb
-
 volumes:
   mongodb_data:
+
