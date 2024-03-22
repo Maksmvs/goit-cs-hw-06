@@ -6,7 +6,7 @@ from urllib.parse import urlparse, unquote_plus
 from datetime import datetime
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from threading import Thread
+from multiprocessing import Process
 from pymongo import MongoClient
 
 URI = "mongodb://mongodb:27017"
@@ -15,28 +15,26 @@ BUFFER_SIZE = 1024
 HTTP_PORT = 3000
 SOCKET_PORT = 5000
 
-
 class CatFramework(BaseHTTPRequestHandler):
     def do_GET(self):
         router = urlparse(self.path).path
-        match router:
-            case "/":
-                self.send_html("index.html")
-            case "/message":
-                self.send_html("message.html")
-            case "/style.css":
-                self.send_static("style.css")
-            case "/logo.png":
-                self.send_static("logo.png", mimetype="image/png")
-            case _:
-                self.send_html("error.html", status=404)
+        if router == "/":
+            self.send_html("index.html")
+        elif router == "/message":
+            self.send_html("message.html")
+        elif router == "/style.css":
+            self.send_static("style.css")
+        elif router == "/logo.png":
+            self.send_static("logo.png", mimetype="image/png")
+        else:
+            self.send_html("error.html", status=404)
 
     def do_POST(self):
-        size = self.headers.get("Content-Length")
-        data = self.rfile.read(int(size)).decode()
+        size = int(self.headers.get("Content-Length", 0))
+        data = self.rfile.read(size).decode()
 
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        client_socket.sendto(data.encode(), ('localhost', SOCKET_PORT))
+        client_socket.sendto(data.encode(), ('0.0.0.0', SOCKET_PORT))
         client_socket.close()
 
         self.send_response(302)
@@ -59,7 +57,6 @@ class CatFramework(BaseHTTPRequestHandler):
         with open(BASE_DIR.joinpath("static", filename), "rb") as f:
             self.wfile.write(f.read())
 
-
 def save_data(data):
     client = MongoClient(URI)
     db = client.homework
@@ -75,39 +72,37 @@ def save_data(data):
     finally:
         client.close()
 
-
 def run_http_server():
-    httpd = HTTPServer(('localhost', HTTP_PORT), CatFramework)
+    httpd = HTTPServer(('0.0.0.0', HTTP_PORT), CatFramework)
     try:
-        logging.info(f"Server started on http://localhost:{HTTP_PORT}")
+        logging.info(f"HTTP Server started on http://0.0.0.0:{HTTP_PORT}")
         httpd.serve_forever()
     except Exception as e:
-        logging.error(f"Server error: {e}")
+        logging.error(f"HTTP Server error: {e}")
     finally:
-        logging.info("Server stopped")
+        logging.info("HTTP Server stopped")
         httpd.server_close()
-
 
 def run_socket_server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('localhost', SOCKET_PORT))
-    logging.info(f"Socket server started on localhost:{SOCKET_PORT}")
+    sock.bind(('0.0.0.0', SOCKET_PORT))
+    logging.info(f"Socket Server started on 0.0.0.0:{SOCKET_PORT}")
     try:
         while True:
             data, addr = sock.recvfrom(BUFFER_SIZE)
             logging.info(f"Received message from {addr}: {data.decode()}")
             save_data(data)
     except Exception as e:
-        logging.error(f"Socket server error: {e}")
+        logging.error(f"Socket Server error: {e}")
     finally:
-        logging.info("Socket server stopped")
+        logging.info("Socket Server stopped")
         sock.close()
 
-
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(threadName)s - %(message)s")
-    http_thread = Thread(target=run_http_server, name="http_server")
-    http_thread.start()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+    http_process = Process(target=run_http_server, name="http_server")
+    http_process.start()
 
-    socket_thread = Thread(target=run_socket_server, name="socket_server")
-    socket_thread.start()
+    socket_process = Process(target=run_socket_server, name="socket_server")
+    socket_process.start()
+
